@@ -1,0 +1,47 @@
+@import './fonts.css';
+@import 'tailwindcss/base';
+@import 'tailwindcss/components';
+@import 'tailwindcss/utilities';
+
+:root {
+  --color-primary: #;
+  --color-secondary: #10B981;
+  --color-accent: #F59E0B;
+  --color-text: #374151;
+  --color-text-light: #6B7280;
+  --color-text-dark: #1F2937;
+  --color-background: #FFFFFF;
+}
+
+html, #app, #app>div {
+  height: 100%
+}
+
+body {
+  font-family: 'Proxima', sans-serif;
+  color: var(--color-text);
+  background-color: var(--color-background);
+  height: 100%
+}
+
+
+:root {
+  --foreground-rgb: 0, 0, 0;
+  --background-start-rgb: 214, 219, 220;
+  --background-end-rgb: 255, 255, 255;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --foreground-rgb: 255, 255, 255;
+    --background-start-rgb: 0, 0, 0;
+    --background-end-rgb: 0, 0, 0;
+  }
+}
+
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
