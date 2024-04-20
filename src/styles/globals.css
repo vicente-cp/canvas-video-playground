@@ -4,37 +4,43 @@
 @import 'tailwindcss/utilities';
 
 :root {
-  --color-primary: #FFFFFF;
+  --color-primary: #;
+  --color-secondary: #10B981;
+  --color-accent: #F59E0B;
   --color-text: #374151;
   --color-text-light: #6B7280;
   --color-text-dark: #1F2937;
   --color-background: #FFFFFF;
 }
 
-
-
-body, html{
-  font-family: 'Proxima', sans-serif;
+html,
+#app,
+#app>div {
   color: var(--color-text);
-  background-color: var(--color-background);
   height: 100%
 }
 
-
-
-
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --foreground-rgb: 255, 255, 255;
-    --background-start-rgb: 0, 0, 0;
-    --background-end-rgb: 0, 0, 0;
-  }
+body {
+  color: var(--color-text);
+  background-color: var(--color-background);
 }
 
+.btn-primary {
+  background-color: #2184f9cc;
+  color: white;
+  padding: .5rem 1.25rem;
+  border-radius: .5rem;
+  border-color: #2184f980;
+  border-width: 1px;
+  font-weight: 500;
+}
 
-@layer utilities {
-  .text-balance {
-    text-wrap: balance;
-  }
+.btn-primary:hover {
+  background-color: #1c6ac9;
+  box-shadow: 0rem 0.4rem .8rem #2184f980;
+  border-color: #2184f9ff;
+  padding: .5rem 1.25rem;
+  border-radius: .5rem;
+  border-width: 1px;
+  transition: all .4s ease-out;
 }

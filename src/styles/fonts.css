@@ -7,28 +7,28 @@ font-style: normal;
 
 @font-face {
 font-family: 'Proxima';
-src: url('/fonts/Proxima/Mark\ Simonson\ \ Proxima\ Nova\ Bold.otf') format('opentype');
+src: url('../../public/fonts/Proxima/Mark\ Simonson\ \ Proxima\ Nova\ Bold.otf') format('opentype');
 font-weight: bold;
 font-style: normal;
 }
 
 @font-face {
 font-family: 'Proxima';
-src: url('/fonts/Proxima/Mark\ Simonson\ \ Proxima\ Nova\ Light.otf') format('opentype');
+src: url('../../public/fonts/Proxima/Mark\ Simonson\ \ Proxima\ Nova\ Light.otf') format('opentype');
 font-weight: 300;
 font-style: normal;
 }
 
 @font-face {
 font-family: 'Proxima';
-src: url('/fonts/Proxima/Mark\ Simonson\ \ Proxima\ Nova\ Semibold.otf') format('opentype');
+src: url('../../public/fonts/Proxima/Mark\ Simonson\ \ Proxima\ Nova\ Semibold.otf') format('opentype');
 font-weight: 600;
 font-style: normal;
 }
 
 @font-face {
 font-family: 'Proxima';
-src: url('/fonts/Proxima/Mark\ Simonson\ \ Proxima\ Nova\ Thin.otf') format('opentype');
+src: url('../../public/fonts/Proxima/Mark\ Simonson\ \ Proxima\ Nova\ Thin.otf') format('opentype');
 font-weight: 100;
 font-style: normal;
 }

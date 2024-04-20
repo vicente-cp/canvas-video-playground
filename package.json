@@ -10,9 +10,11 @@
   },
   "dependencies": {
     "canvas": "^2.11.2",
+    "mp4box": "^0.5.2",
     "next": "14.2.1",
     "react": "^18",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "react-hooks-worker": "^1.0.4"
   },
   "devDependencies": {
     "@types/node": "^20",
