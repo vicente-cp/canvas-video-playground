@@ -4,7 +4,7 @@ import React from 'react';
 import FramePreciseVideoPlayer from '../components/FramePreciseVideoPlayer';
 
 const Page = () => {
-  const videoSrc = "/media/videos/people_walking.mp4";
+  const videoSrc = "/media/videos/traffic.mp4";
   const videoCodec = 'avc1.42001E'; // or 'hevc', 'vp8', 'vp9', 'av1'
   const rendererType = '2d'; // or 'webgl', 'webgpu'
 

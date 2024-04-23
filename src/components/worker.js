@@ -1,15 +1,17 @@
 import { createFile, DataStream } from 'mp4box';
 
 class MP4Demuxer {
-  constructor(url, onConfig, onChunk, onSeek) {
+  constructor(url, onConfig, onChunk, onKeyframeIndex, onSeek) {
     this.url = url;
     this.onConfig = onConfig;
     this.onChunk = onChunk;
+    this.onKeyframeIndex = onKeyframeIndex;
     this.onSeek = onSeek;
     this.demuxer = null;
     this.totalFrames = 0;
     this.currentFrame = 0;
     this.info = null;
+    this.keyframeIndex = [];
   }
 
   async start() {
@@ -39,7 +41,6 @@ class MP4Demuxer {
     const trak = this.demuxer.getTrackById(videoTrack.id);
     const description = this.getDescription(trak);
     this.totalFrames = videoTrack.nb_samples;
-
     const videoConfig = {
       totalFrames: videoTrack.nb_samples,
       fps: this.totalFrames / info.duration * info.timescale,
@@ -52,8 +53,11 @@ class MP4Demuxer {
     this.demuxer.setExtractionOptions(videoTrack.id);
     this.demuxer.start();
     this.demuxer.onSamples = (id, user, samples) => {
-      this.currentFrame += samples.length;
-      const frames = samples.map((sample) => {
+      const frames = samples.map((sample, index) => {
+        if (sample.is_sync) {
+          this.keyframeIndex.push(this.currentFrame);
+        }
+        this.currentFrame++;
         return new EncodedVideoChunk({
           type: sample.is_sync ? 'key' : 'delta',
           timestamp: sample.dts,
@@ -61,24 +65,22 @@ class MP4Demuxer {
           data: sample.data,
         });
       });
-      this.onChunk({ frames, description });
+      this.onChunk({ frames, description: this.getDescription(trak) });
     };
     this.demuxer.flush();
-
-    
+    this.onKeyframeIndex(this.keyframeIndex);
   }
 
   getDescription(trak) {
     for (const entry of trak.mdia.minf.stbl.stsd.entries) {
       if (entry.avcC || entry.hvcC) {
-
         const stream = new DataStream(undefined, 0, DataStream.BIG_ENDIAN);
         if (entry.avcC) {
           entry.avcC.write(stream);
         } else {
           entry.hvcC.write(stream);
         }
-        return new Uint8Array(stream.buffer, 8);  // Remove the box header.
+        return new Uint8Array(stream.buffer, 8); // Remove the box header.
       }
     }
     throw "Codec not found";
@@ -108,7 +110,6 @@ let demuxer;
 
 self.onmessage = async (event) => {
   const { type, data } = event.data;
-
   switch (type) {
     case 'start':
       startDemuxing(data.url);
@@ -132,6 +133,10 @@ function startDemuxing(url) {
     // On chunk callback
     (data) => {
       self.postMessage({ type: 'chunk', data });
+    },
+    // On keyframe index callback
+    (keyframeIndex) => {
+      self.postMessage({ type: 'keyframeIndex', data: keyframeIndex });
     },
     // On seek callback
     (frameNumber) => {

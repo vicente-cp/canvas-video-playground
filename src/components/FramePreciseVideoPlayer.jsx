@@ -1,4 +1,4 @@
-import React, { useRef, useReducer, useEffect } from 'react';
+import React, { useRef, useReducer, useEffect, useState } from 'react';
 
 const initialState = {
   currentFrameIndex: 0,
@@ -10,7 +10,7 @@ const initialState = {
   error: null,
   videoDimensions: { width: 0, height: 0 },
   frames: [],
-  decodedFrames: [],
+  keyframeIndex: [],
   description: null,
 };
 
@@ -34,10 +34,10 @@ const reducer = (state, action) => {
         frames: [...state.frames, ...action.payload.frames],
         description: action.payload.description,
       };
-    case 'ADD_DECODED_FRAME':
+    case 'SET_KEYFRAME_INDEX':
       return {
         ...state,
-        decodedFrames: [...state.decodedFrames, action.payload],
+        keyframeIndex: action.payload,
       };
     case 'SET_CURRENT_FRAME_INDEX':
       return {
@@ -66,56 +66,22 @@ const FramePreciseVideoPlayer = ({ src, codec, renderer }) => {
   const videoDecoderRef = useRef(null);
 
   const [state, dispatch] = useReducer(reducer, initialState);
-  const [memoryUsage, setMemoryUsage] = React.useState(0);
-
-  useEffect(() => {
-    const getMemoryUsage = () => {
-      if (performance && performance.memory) {
-        const usedJSHeapSize = performance.memory.usedJSHeapSize;
-        const jsHeapSizeLimit = performance.memory.jsHeapSizeLimit;
-        const totalJSHeapSize = performance.memory.totalJSHeapSize;
-
-        const usedMemory = (usedJSHeapSize / (1024 * 1024)).toFixed(2);
-        const limitMemory = (jsHeapSizeLimit / (1024 * 1024)).toFixed(2);
-        const totalMemory = (totalJSHeapSize / (1024 * 1024)).toFixed(2);
-
-        setMemoryUsage({
-          usedMemory,
-          limitMemory,
-          totalMemory,
-        });
-      }
-    };
-
-    const intervalId = setInterval(getMemoryUsage, 1000);
-
-    return () => {
-      clearInterval(intervalId);
-    };
-  }, []);
-
+  const [renderFrame, setRenderFrame] = useState(true);
 
   useEffect(() => {
     let playbackIntervalId;
 
-    const playVideo = () => {
-      if (currentFrameIndexRef.current < state.decodedFrames.length) {
-        const canvas = canvasRef.current;
-        if (canvas) {
-          const context = canvas.getContext(renderer);
-          context.drawImage(
-            state.decodedFrames[currentFrameIndexRef.current],
-            0,
-            0,
-            state.videoDimensions.width,
-            state.videoDimensions.height
-          );
-          currentFrameIndexRef.current++;
-        }
-      }
-
-      if (currentFrameIndexRef.current < state.decodedFrames.length && state.playbackState === 'playing') {
-        playbackIntervalId = setTimeout(playVideo, 1000 / state.fps);
+    const playVideo = async () => {
+      setRenderFrame(true); // Set the flag to true for rendering all frames during playback
+      configureVideoDecoder(); // Configure the VideoDecoder before decoding frames
+      while (currentFrameIndexRef.current < state.frames.length) {
+        if (state.playbackState !== 'playing') break;
+        await decodeFrame(state.frames[currentFrameIndexRef.current]);
+        dispatch({ type: 'SET_CURRENT_FRAME_INDEX', payload: currentFrameIndexRef.current });
+        currentFrameIndexRef.current++;
+        await new Promise((resolve) => {
+          playbackIntervalId = setTimeout(resolve, 1000 / state.fps);
+        });
       }
     };
 
@@ -126,7 +92,7 @@ const FramePreciseVideoPlayer = ({ src, codec, renderer }) => {
     return () => {
       clearTimeout(playbackIntervalId);
     };
-  }, [state.playbackState, state.fps, state.decodedFrames, state.videoDimensions, renderer]);
+  }, [state.playbackState, state.fps, state.frames]);
 
   useEffect(() => {
     const worker = new Worker(new URL('worker', import.meta.url));
@@ -140,6 +106,9 @@ const FramePreciseVideoPlayer = ({ src, codec, renderer }) => {
           break;
         case 'chunk':
           dispatch({ type: 'ADD_FRAMES', payload: data });
+          break;
+        case 'keyframeIndex':
+          dispatch({ type: 'SET_KEYFRAME_INDEX', payload: data });
           break;
         case 'error':
           dispatch({ type: 'SET_ERROR', payload: data });
@@ -168,61 +137,96 @@ const FramePreciseVideoPlayer = ({ src, codec, renderer }) => {
     if (state.videoDimensions.width > 0 && state.videoDimensions.height > 0) {
       videoDecoderRef.current = new VideoDecoder({
         output: (videoFrame) => {
-          dispatch({ type: 'ADD_DECODED_FRAME', payload: videoFrame });
+          console.log("Render frame", renderFrame);
+          if (renderFrame) {
+            const canvas = canvasRef.current;
+            if (canvas) {
+              const context = canvas.getContext(renderer);
+              context.drawImage(
+                videoFrame,
+                0,
+                0,
+                state.videoDimensions.width,
+                state.videoDimensions.height
+              );
+            }
+          }
+          videoFrame.close();
         },
         error: (error) => {
           dispatch({ type: 'SET_ERROR', payload: error });
         },
       });
+    // Configure the VideoDecoder before decoding frames
+    configureVideoDecoder();
     }
-  }, [state.videoDimensions]);
+  }, [state.videoDimensions, renderer, renderFrame]);
 
-  useEffect(() => {
-    const decodeFrames = async () => {
-      for (const encodedFrame of state.frames) {
-        if (encodedFrame.type === 'key') {
-          videoDecoderRef.current.configure({
-            codec: codec,
-            codedWidth: state.videoDimensions.width,
-            codedHeight: state.videoDimensions.height,
-            description: state.description,
-          });
-        }
-        await videoDecoderRef.current.decode(encodedFrame);
-      }
-    };
-
-    decodeFrames();
-  }, [state.frames, codec, state.videoDimensions, state.description]);
-
-  const seekToFrame = (frameIndex) => {
-    if (frameIndex >= 0 && frameIndex < state.decodedFrames.length) {
-      currentFrameIndexRef.current = frameIndex;
-      const canvas = canvasRef.current;
-      if (canvas) {
-        const context = canvas.getContext(renderer);
-        context.drawImage(
-          state.decodedFrames[frameIndex],
-          0,
-          0,
-          state.videoDimensions.width,
-          state.videoDimensions.height
-        );
-      }
+  const configureVideoDecoder = () => {
+    if (state.description) {
+      videoDecoderRef.current.configure({
+        codec: codec,
+        codedWidth: state.videoDimensions.width,
+        codedHeight: state.videoDimensions.height,
+        description: state.description,
+      });
     }
   };
 
-  const handleSeekClick = (direction) => {
+  const decodeFrame = async (encodedFrame) => {
+    await videoDecoderRef.current.decode(encodedFrame);
+  };
+
+  const seekToFrame = async (frameIndex) => {
+    if (frameIndex >= 0 && frameIndex < state.frames.length) {
+      currentFrameIndexRef.current = frameIndex;
+      setRenderFrame(false);
+      dispatch({ type: 'SET_CURRENT_FRAME_INDEX', payload: frameIndex });
+    }
+  };
+  
+  useEffect(() => {
+    const decodeFramesForSeeking = async () => {
+      if (!renderFrame && state.currentFrameIndex >= 0 && state.currentFrameIndex < state.frames.length) {
+        // Find the nearest keyframe
+        const nearestKeyframeIndex = state.keyframeIndex.reduce((prevIndex, keyframe, currentIndex) => {
+          if (keyframe <= state.currentFrameIndex && (prevIndex === -1 || state.currentFrameIndex - keyframe < state.currentFrameIndex - state.keyframeIndex[prevIndex])) {
+            return currentIndex;
+          }
+          return prevIndex;
+        }, -1);
+  
+        const keyframeStart = state.keyframeIndex[nearestKeyframeIndex] || 0;
+  
+        // Configure the VideoDecoder before decoding frames
+        configureVideoDecoder();
+  
+        // Decode frames from the keyframe to the target frame
+        for (let i = keyframeStart; i <= state.currentFrameIndex; i++) {
+          await decodeFrame(state.frames[i]);
+        }
+  
+        setRenderFrame(true);
+        await decodeFrame(state.frames[state.currentFrameIndex]);
+      }
+    };
+  
+    decodeFramesForSeeking();
+  }, [state.currentFrameIndex, renderFrame, state.frames, state.keyframeIndex]);
+  
+  
+
+  const handleSeekClick = async (direction) => {
     const newFrameIndex =
       direction === 'forward'
         ? currentFrameIndexRef.current + 1
         : currentFrameIndexRef.current - 1;
-    seekToFrame(newFrameIndex);
+    await seekToFrame(newFrameIndex);
   };
 
-  const getDecodedPercentage = () => {
-    if (state.totalFrames === 0) return 0;
-    return Math.floor((state.decodedFrames.length / state.totalFrames) * 100);
+  const togglePlayback = () => {
+    const newPlaybackState = state.playbackState === 'playing' ? 'paused' : 'playing';
+    dispatch({ type: 'SET_PLAYBACK_STATE', payload: newPlaybackState });
   };
 
   if (state.isLoading) {
@@ -230,7 +234,6 @@ const FramePreciseVideoPlayer = ({ src, codec, renderer }) => {
   }
 
   if (state.error) {
-    
     return <div>Error: {state.error.message || 'An error occurred'}</div>;
   }
 
@@ -241,17 +244,8 @@ const FramePreciseVideoPlayer = ({ src, codec, renderer }) => {
       </figure>
       <div className="card-body">
         <div className="card-actions justify-center">
-          <button
-            className="btn btn-primary"
-            onClick={() => dispatch({ type: 'SET_PLAYBACK_STATE', payload: 'playing' })}
-          >
-            Play
-          </button>
-          <button
-            className="btn btn-primary"
-            onClick={() => dispatch({ type: 'SET_PLAYBACK_STATE', payload: 'paused' })}
-          >
-            Pause
+          <button className="btn btn-primary" onClick={togglePlayback}>
+            {state.playbackState === 'playing' ? 'Pause' : 'Play'}
           </button>
           <button className="btn btn-primary" onClick={() => handleSeekClick('backward')}>
             Previous Frame
@@ -263,19 +257,7 @@ const FramePreciseVideoPlayer = ({ src, codec, renderer }) => {
         <div className="text-center">
           Current Frame: {state.currentFrameIndex} / {state.totalFrames}
         </div>
-
       </div>
-      <div className="card-body">
-        {/* ... (existing code) */}
-        {memoryUsage.usedMemory && (
-          <div className="text-center">
-            Memory Usage: {memoryUsage.usedMemory} MB / {memoryUsage.limitMemory} MB
-          </div>
-        )}
-      </div>
-      <div className="text-center">
-          Decoded Frames: {getDecodedPercentage()}%
-        </div>
     </div>
   );
 };
