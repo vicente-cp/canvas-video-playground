@@ -1,10 +1,11 @@
 'use client';
 import '../styles/globals.css';
 import React from 'react';
+import FramesPlayer from '../components/FramesPlayer/FramesPlayer';
 import FramePreciseVideoPlayer from '../components/FramePreciseVideoPlayer';
 
 const Page = () => {
-  const videoSrc = "/media/videos/people_walking.mp4";
+  const videoSrc = "/media/videos/traffic.mp4";
   const videoCodec = 'avc1.42001E'; // or 'hevc', 'vp8', 'vp9', 'av1'
   const rendererType = '2d'; // or 'webgl', 'webgpu'
 
@@ -19,7 +20,7 @@ const Page = () => {
         <div className="mb-8">
           <div className="card bg-white shadow-md">
             <div className="card-body">
-              <FramePreciseVideoPlayer src={videoSrc} codec={videoCodec} renderer={rendererType} />
+              <FramesPlayer src={videoSrc} codec={videoCodec} renderer={rendererType} />
             </div>
           </div>
         </div>

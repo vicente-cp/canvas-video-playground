@@ -1,13 +1,13 @@
 import { createFile, DataStream } from 'mp4box';
 
-class MP4Demuxer {
+class MP4Parser {
   constructor(url, onConfig, onChunk, onKeyframeIndex, onSeek) {
     this.url = url;
     this.onConfig = onConfig;
     this.onChunk = onChunk;
     this.onKeyframeIndex = onKeyframeIndex;
     this.onSeek = onSeek;
-    this.demuxer = null;
+    this.mp4boxfile = null;
     this.totalFrames = 0;
     this.currentFrame = 0;
     this.info = null;
@@ -22,11 +22,11 @@ class MP4Demuxer {
       const buffer = await response.arrayBuffer();
       const arrayBuffer = buffer;
       arrayBuffer.fileStart = 0;
-      this.demuxer = createFile();
-      this.demuxer.onMoovStart = this.onMoovStart.bind(this);
-      this.demuxer.onReady = this.onReady.bind(this);
-      this.demuxer.onError = this.onError.bind(this);
-      this.demuxer.appendBuffer(arrayBuffer);
+      this.mp4boxfile = createFile();
+      this.mp4boxfile.onMoovStart = this.onMoovStart.bind(this);
+      this.mp4boxfile.onReady = this.onReady.bind(this);
+      this.mp4boxfile.onError = this.onError.bind(this);
+      this.mp4boxfile.appendBuffer(arrayBuffer);
     } catch (error) {
       console.error('Error fetching and parsing MP4 file:', error);
     }
@@ -38,7 +38,7 @@ class MP4Demuxer {
 
   onReady(info) {
     const videoTrack = info.tracks.find((track) => track.type === 'video');
-    const trak = this.demuxer.getTrackById(videoTrack.id);
+    const trak = this.mp4boxfile.getTrackById(videoTrack.id);
     const description = this.getDescription(trak);
     this.totalFrames = videoTrack.nb_samples;
     const videoConfig = {
@@ -50,24 +50,32 @@ class MP4Demuxer {
       description: description,
     };
     this.onConfig(videoConfig);
-    this.demuxer.setExtractionOptions(videoTrack.id);
-    this.demuxer.start();
-    this.demuxer.onSamples = (id, user, samples) => {
-      const frames = samples.map((sample, index) => {
+    this.mp4boxfile.setExtractionOptions(videoTrack.id);
+    this.mp4boxfile.start();
+    this.mp4boxfile.onSamples = (id, user, samples) => {
+
+      const indexedFrames = samples.map((sample, index) => {
         if (sample.is_sync) {
           this.keyframeIndex.push(this.currentFrame);
         }
         this.currentFrame++;
-        return new EncodedVideoChunk({
-          type: sample.is_sync ? 'key' : 'delta',
-          timestamp: sample.dts,
-          duration: sample.duration,
-          data: sample.data,
-        });
+
+          // This is done to render the first frame as soon as possible
+          return {
+            "frameNum": this.currentFrame - 1,
+             "encodedVideoChunk": new EncodedVideoChunk({
+              type: sample.is_sync ? 'key' : 'delta',
+              timestamp: sample.dts,
+              duration: sample.duration,
+              data: sample.data,
+            }),
+            "totalSamples":videoTrack.nb_samples
+          }
+        ;
       });
-      this.onChunk({ frames, description: this.getDescription(trak) });
+      this.onChunk(indexedFrames);
     };
-    this.demuxer.flush();
+    this.mp4boxfile.flush();
     this.onKeyframeIndex(this.keyframeIndex);
   }
 
@@ -87,26 +95,26 @@ class MP4Demuxer {
   }
 
   onError(error) {
-    console.error('Demuxer error:', error);
+    console.error('MP4BoxFile Error:', error);
   }
 
   seekToFrame(frameNumber) {
     if (!this.info) return;
     const targetTime = (frameNumber / this.totalFrames) * this.info.duration;
-    this.demuxer.seek(targetTime);
+    this.mp4boxfile.seek(targetTime);
     this.currentFrame = frameNumber;
     this.onSeek(frameNumber);
   }
 
   stop() {
-    if (this.demuxer) {
-      this.demuxer.stop();
-      this.demuxer = null;
+    if (this.mp4boxfile) {
+      this.mp4boxfile.stop();
+      this.mp4boxfile = null;
     }
   }
 }
 
-let demuxer;
+let mp4parser;
 
 self.onmessage = async (event) => {
   const { type, data } = event.data;
@@ -124,7 +132,7 @@ self.onmessage = async (event) => {
 
 function startDemuxing(url) {
   const parsedUrl = new URL(url, self.location.origin);
-  demuxer = new MP4Demuxer(
+  mp4parser = new MP4Parser(
     parsedUrl.href,
     // On config callback
     (info) => {
@@ -143,11 +151,11 @@ function startDemuxing(url) {
       self.postMessage({ type: 'seek', data: frameNumber });
     }
   );
-  demuxer.start();
+  mp4parser.start();
 }
 
 function seekToFrame(frameNumber) {
-  if (demuxer) {
-    demuxer.seekToFrame(frameNumber);
+  if (mp4parser) {
+    mp4parser.seekToFrame(frameNumber);
   }
 }
