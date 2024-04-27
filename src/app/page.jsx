@@ -1,6 +1,7 @@
 'use client';
 import '../styles/globals.css';
 import React from 'react';
+import FramesPlayer from '../components/FramesPlayer/FramesPlayer';
 import FramePreciseVideoPlayer from '../components/FramePreciseVideoPlayer';
 
 const Page = () => {
@@ -19,7 +20,7 @@ const Page = () => {
         <div className="mb-8">
           <div className="card bg-white shadow-md">
             <div className="card-body">
-              <FramePreciseVideoPlayer src={videoSrc} codec={videoCodec} renderer={rendererType} />
+              <FramesPlayer src={videoSrc} codec={videoCodec} renderer={rendererType} />
             </div>
           </div>
         </div>

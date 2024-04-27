@@ -12,6 +12,8 @@ const initialState = {
   frames: [],
   keyframeIndex: [],
   description: null,
+  seekingState: false  ,
+  renderState: true
 };
 
 const reducer = (state, action) => {
@@ -39,11 +41,6 @@ const reducer = (state, action) => {
         ...state,
         keyframeIndex: action.payload,
       };
-    case 'SET_CURRENT_FRAME_INDEX':
-      return {
-        ...state,
-        currentFrameIndex: action.payload,
-      };
     case 'SET_ERROR':
       return {
         ...state,
@@ -54,44 +51,54 @@ const reducer = (state, action) => {
         ...state,
         playbackState: action.payload,
       };
+      case 'SET_SEEKING_STATE':
+        return {
+          ...state,
+          seekingState: action.payload,
+        };      
+        case 'SET_RENDER_STATE':
+          return {
+            ...state,
+            renderState: action.payload,
+          };      
     default:
       return state;
   }
 };
 
+// ... (initialState and reducer remain the same)
+
 const FramePreciseVideoPlayer = ({ src, codec, renderer }) => {
   const canvasRef = useRef(null);
   const workerRef = useRef(null);
-  const currentFrameIndexRef = useRef(0);
   const videoDecoderRef = useRef(null);
+  const isDecoderConfiguredRef = useRef(false);
 
   const [state, dispatch] = useReducer(reducer, initialState);
-  const [renderFrame, setRenderFrame] = useState(true);
 
   useEffect(() => {
     let playbackIntervalId;
-
     const playVideo = async () => {
-      setRenderFrame(true); // Set the flag to true for rendering all frames during playback
-      configureVideoDecoder(); // Configure the VideoDecoder before decoding frames
-      while (currentFrameIndexRef.current < state.frames.length) {
+      while (state.currentFrameIndex < state.frames.length) {
         if (state.playbackState !== 'playing') break;
-        await decodeFrame(state.frames[currentFrameIndexRef.current]);
-        dispatch({ type: 'SET_CURRENT_FRAME_INDEX', payload: currentFrameIndexRef.current });
-        currentFrameIndexRef.current++;
+        await decodeFrame(state.frames[state.currentFrameIndex]);
+        state.currentFrameIndex++;
         await new Promise((resolve) => {
           playbackIntervalId = setTimeout(resolve, 1000 / state.fps);
         });
       }
     };
 
-    if (state.playbackState === 'playing') {
+    if (state.playbackState == 'playing') {
+
       playVideo();
     }
 
     return () => {
       clearTimeout(playbackIntervalId);
     };
+
+
   }, [state.playbackState, state.fps, state.frames]);
 
   useEffect(() => {
@@ -137,8 +144,7 @@ const FramePreciseVideoPlayer = ({ src, codec, renderer }) => {
     if (state.videoDimensions.width > 0 && state.videoDimensions.height > 0) {
       videoDecoderRef.current = new VideoDecoder({
         output: (videoFrame) => {
-          console.log("Render frame", renderFrame);
-          if (renderFrame) {
+          if (state.renderState) {
             const canvas = canvasRef.current;
             if (canvas) {
               const context = canvas.getContext(renderer);
@@ -157,70 +163,76 @@ const FramePreciseVideoPlayer = ({ src, codec, renderer }) => {
           dispatch({ type: 'SET_ERROR', payload: error });
         },
       });
-    // Configure the VideoDecoder before decoding frames
-    configureVideoDecoder();
     }
-  }, [state.videoDimensions, renderer, renderFrame]);
+  }, [state.videoDimensions, renderer,]);
 
-  const configureVideoDecoder = () => {
-    if (state.description) {
-      videoDecoderRef.current.configure({
+
+  const setRenderFrame = async (displayFrames) => {
+    console.log("inside setrenderframe", displayFrames);
+    dispatch({ type: 'SET_RENDER_STATE', payload: displayFrames });
+
+  };
+
+  const configureVideoDecoder = async () => {
+    if (state.description && !isDecoderConfiguredRef.current) {
+      await videoDecoderRef.current.configure({
         codec: codec,
         codedWidth: state.videoDimensions.width,
         codedHeight: state.videoDimensions.height,
         description: state.description,
       });
+      console.log("Configured!");
+      isDecoderConfiguredRef.current = true;
     }
   };
 
   const decodeFrame = async (encodedFrame) => {
+    await configureVideoDecoder();
     await videoDecoderRef.current.decode(encodedFrame);
+
   };
 
   const seekToFrame = async (frameIndex) => {
     if (frameIndex >= 0 && frameIndex < state.frames.length) {
-      currentFrameIndexRef.current = frameIndex;
-      setRenderFrame(false);
+      state.currentFrameIndex = frameIndex;
       dispatch({ type: 'SET_CURRENT_FRAME_INDEX', payload: frameIndex });
+      dispatch({ type: 'SET_SEEKING_STATE', payload: true });
     }
   };
-  
+
   useEffect(() => {
     const decodeFramesForSeeking = async () => {
-      if (!renderFrame && state.currentFrameIndex >= 0 && state.currentFrameIndex < state.frames.length) {
-        // Find the nearest keyframe
+
+      if (state.seekingState && state.currentFrameIndex >= 0 && state.currentFrameIndex < state.frames.length) {
         const nearestKeyframeIndex = state.keyframeIndex.reduce((prevIndex, keyframe, currentIndex) => {
           if (keyframe <= state.currentFrameIndex && (prevIndex === -1 || state.currentFrameIndex - keyframe < state.currentFrameIndex - state.keyframeIndex[prevIndex])) {
             return currentIndex;
           }
           return prevIndex;
         }, -1);
-  
+
         const keyframeStart = state.keyframeIndex[nearestKeyframeIndex] || 0;
-  
-        // Configure the VideoDecoder before decoding frames
-        configureVideoDecoder();
-  
-        // Decode frames from the keyframe to the target frame
+        await setRenderFrame(false);
+
         for (let i = keyframeStart; i <= state.currentFrameIndex; i++) {
           await decodeFrame(state.frames[i]);
         }
-  
-        setRenderFrame(true);
+        await setRenderFrame(true);
         await decodeFrame(state.frames[state.currentFrameIndex]);
       }
     };
-  
+
     decodeFramesForSeeking();
-  }, [state.currentFrameIndex, renderFrame, state.frames, state.keyframeIndex]);
-  
-  
+    dispatch({ type: 'SET_SEEKING_STATE', payload: false });
+
+  }, [state.seekingState, state.frames, state.keyframeIndex]);
+  // Used to have dependencies: [state.currentFrameIndex, state.frames, state.keyframeIndex]
 
   const handleSeekClick = async (direction) => {
     const newFrameIndex =
       direction === 'forward'
-        ? currentFrameIndexRef.current + 1
-        : currentFrameIndexRef.current - 1;
+        ? state.currentFrameIndex + 1
+        : state.currentFrameIndex - 1;
     await seekToFrame(newFrameIndex);
   };
 
